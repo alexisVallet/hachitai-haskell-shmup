@@ -1,24 +1,9 @@
 module Collision where
 
+import Environment.Internal
+
 import Data.List
-
-data Quadrant = NW | NE | SW | SE
-
--- | QuadTree data structure containing AABBs
-data QuadTree a = Leaf
-                | Node AABB [a] (QuadTree a) (QuadTree a)
-                                (QuadTree a) (QuadTree a)
-                  deriving (Eq, Ord, Show)
-
--- | AABB with center and half dimension
-data AABB = AABB (Float,Float) (Float,Float)
-            deriving (Eq, Ord, Show)
-
-class HasAABB a where
-  getAABB :: a -> AABB
-
-instance HasAABB AABB where
-  getAABB = id
+import Control.Exception
 
 subQuadrants :: AABB -> (AABB,AABB,AABB,AABB)
 subQuadrants (AABB (cx,cy) (hx,hy)) =
@@ -36,7 +21,7 @@ intersectAABB (AABB (c1x,c1y) (h1x,h1y)) (AABB (c2x,c2y) (h2x,h2y)) =
   && intersect1D (c1y-h1y) (c1y+h1y) (c2y-h2y) (c2y+h2y)
   where intersect1D x1 x2 y1 y2 = not $ x2 < y1 || x1 > y2
 
-emptyQuadTree :: HasAABB a => AABB -> Int -> QuadTree a
+emptyQuadTree :: AABB -> Int -> QuadTree a
 emptyQuadTree worldSize height
   | height <= 0 = Leaf
   | otherwise   = Node worldSize [] (child nw) (child ne) 
@@ -45,14 +30,14 @@ emptyQuadTree worldSize height
     (nw,ne,sw,se) = subQuadrants worldSize
     child quadrant = emptyQuadTree quadrant (height-1)
 
-intersectingChildren :: HasAABB a => AABB -> QuadTree a -> [QuadTree a]
+intersectingChildren :: AABB -> QuadTree a -> [QuadTree a]
 intersectingChildren xAABB (Node _ _ nw ne sw se) = 
   map snd $
   filter fst $
   [(intersectAABB qAABB xAABB, quadrant) 
    | quadrant@(Node qAABB _ _ _ _ _) <- [nw,ne,sw,se]]
 
-intersectingQuadrants :: HasAABB a => AABB -> QuadTree a -> [Quadrant]
+intersectingQuadrants :: AABB -> QuadTree a -> [Quadrant]
 intersectingQuadrants aabb (Node _ _ nw ne sw se) =
   map snd $
   filter fst $
@@ -82,18 +67,23 @@ queryIntersecting a qtree =
   let aabb = getAABB a in
   filter (intersectAABB aabb . getAABB) $ queryClose aabb qtree
 
-remove :: (HasAABB a, Eq a) => a -> QuadTree a -> QuadTree a
-remove x (Node size xs Leaf _ _ _) =
-  Node size (delete x xs) Leaf Leaf Leaf Leaf
-remove x node@(Node size xs nw ne sw se) =
-  case intersectingQuadrants (getAABB x) node of
-    [NW] -> Node size xs (remove x nw) ne sw se
-    [NE] -> Node size xs nw (remove x ne) sw se
-    [SW] -> Node size xs nw ne (remove x sw) se
-    [SE] -> Node size xs nw ne sw (remove x se)
-    _ -> Node size (delete x xs) nw ne sw se
+remove :: Agent -> QuadTree Agent -> QuadTree Agent
+remove agent (Node size xs Leaf _ _ _) =
+  Node size (deleteBy (\x y -> getID x == getID y) agent xs) Leaf Leaf Leaf Leaf
+remove agent node@(Node size xs nw ne sw se) =
+  case intersectingQuadrants (getAABB agent) node of
+    [NW] -> Node size xs (remove agent nw) ne sw se
+    [NE] -> Node size xs nw (remove agent ne) sw se
+    [SW] -> Node size xs nw ne (remove agent sw) se
+    [SE] -> Node size xs nw ne sw (remove agent se)
+    _ -> Node size (deleteBy (\x y -> getID x /= getID y) agent xs) nw ne sw se
 remove _ _ = error "cannot remove object from a leaf!"
 
-move :: (HasAABB a, Eq a) => a -> (a -> a) -> QuadTree a -> QuadTree a
-move x movement qtree =
-  insertQTree (movement x) $ remove x qtree
+move :: (AgentClass a) => Int -> a -> a -> QuadTree Agent -> QuadTree Agent
+move ident oldAgent newAgent qtree =
+  insertQTree (Agent ident newAgent) $ remove (Agent ident oldAgent) qtree
+
+toList :: QuadTree a -> [a]
+toList Leaf = []
+toList (Node _ xs nw ne sw se) = 
+  xs ++ toList nw ++ toList ne ++ toList sw ++ toList se

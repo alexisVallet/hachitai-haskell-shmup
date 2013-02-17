@@ -16,26 +16,32 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 executable haskell-shmup
+  ghc-options: -Werror
   main-is:             Main.hs
   -- other-modules:       
-  extensions:        FlexibleInstances, UndecidableInstances
+  extensions:        FlexibleInstances, UndecidableInstances, GADTs, TemplateHaskell, FlexibleContexts
   build-depends:       base == 4.5.*,
                        SDL == 0.6.3,
                        SDL-image == 0.6.1,
                        directory == 1.1.0.2,
                        mtl == 2.1.2,
-                       transformers == 0.3.0.0
+                       transformers == 0.3.0.0,
+                       lens == 2.6.1,
+                       vector-space == 0.8.6,
+                       NumInstances == 1.0,
+                       vector == 0.10.0.1
 
 Test-Suite test-animation
     type: exitcode-stdio-1.0
     main-is: Test/AnimationTest.hs
-    extensions:        FlexibleInstances, UndecidableInstances
+    extensions:        FlexibleInstances, UndecidableInstances, GADTs
     build-depends:     base == 4.5.*,
                        SDL == 0.6.3,
                        SDL-image == 0.6.1,
                        directory == 1.1.0.2,
                        mtl == 2.1.2,
-                       transformers == 0.3.0.0
+                       transformers == 0.3.0.0,
+                       vector-space == 0.8.2
 
 Test-Suite test-collision
     type: exitcode-stdio-1.0
