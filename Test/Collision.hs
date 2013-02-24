@@ -1,27 +1,16 @@
-module Main (main) where
+module Test.Collision (testCollision) where
 
 import Test.Framework
 import Test.Framework.Providers.QuickCheck2
 import Test.QuickCheck
+import Data.List hiding (insert)
+
 import Collision
-import Data.List
+import Environment
+import Test.ArbitraryInstances
 
-instance Arbitrary AABB where
-  arbitrary = do
-    let AABB (wcx,wcy) (whx,why) = worldSize
-    cx <- choose (wcx-whx,wcx+whx)
-    cy <- choose (wcy-why,wcy+why)
-    hx <- choose (1,whx)
-    hy <- choose (1,why)
-    return $ AABB (cx,cy) (hx,hy)
-
-worldSize :: AABB
-worldSize = AABB (320,240) (320,240)
-
-main :: IO ()
-main =
-  defaultMain
-  [testProperty "same result as naive" pNaive]
+testCollision =
+  testGroup "Collision" [testProperty "same result as naive" pNaive]
 
 naiveDetection :: AABB -> [AABB] -> [AABB]
 naiveDetection aabb aabbs =
@@ -30,7 +19,7 @@ naiveDetection aabb aabbs =
 pNaive :: AABB -> [AABB] -> Property
 pNaive aabb aabbs =
   let 
-    qtree = foldr insertQTree (emptyQuadTree worldSize 4) aabbs
+    qtree = foldr insert (empty worldSize 4) aabbs
     naiveResult = sort $ naiveDetection aabb aabbs
     qtreeResult =
       sort

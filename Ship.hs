@@ -1,58 +1,104 @@
 module Ship 
        (
          Ship,
-         newShip
+         newShip,
+         loadShipAssets
        ) where
 
-import Environment
-
+import Graphics.UI.SDL
 import Control.Monad.Reader.Class
 import Control.Lens
 import Data.NumInstances ()
 import Data.VectorSpace
+import Control.Arrow hiding (left, right)
+import Control.Monad.IO.Class
+import Data.Maybe
+
+import KinematicAgent
+import AnimatedAgent
+import Environment
+import Collision
+import Animation
+import Assets
+import Config
 
 data Ship = Ship {
-  _position :: (Float,Float),
-  _speed :: Float,
-  _angle :: Float
+  _shipPosition :: (Float,Float),
+  _shipSpeed :: Float,
+  _shipAngle :: Float,
+  _shipCurrentAnimation :: AnimationPoint
   } deriving (Eq, Ord, Show)
 makeLenses ''Ship
+
+instance AnimatedAgent Ship where
+  currentAnimation = shipCurrentAnimation
+
+instance KinematicAgent Ship where
+  position = shipPosition
+  speed = shipSpeed
+  angle = shipAngle
 
 instance HasAABB Ship where
   getAABB ship = AABB (ship^.position) (2,2)
 
 instance AgentClass Ship where
-  live dt ident ship = do
-    ship' <- fromInputs ship
-    let ship'' = ship' {
-          _position = 
-             ship'^.position 
-             + (ship'^.speed * dt) *^ (cos $ ship'^.angle,sin $ ship'^.angle)
-          }
-    agents %= move ident ship ship''
+  live dt = do
+    processInputs
+    updateAnimation
+    updatePosition dt
+    let 
+      wrap maxValue x = max 0 $ min maxValue x
+      wrapInScreen (x,y) =
+        (wrap (fromIntegral screenWidth) x,
+         wrap (fromIntegral screenHeight) y)
+    agent.position %= wrapInScreen
   agentType _ = ShipType
+  render ship =
+    let 
+      surface = currentFrame $ ship^.currentAnimation
+      (w,h) = (surfaceGetWidth surface, surfaceGetHeight surface)
+      (x,y) = (round *** round) $ ship^.position
+      rect = Rect (x-(w`div`2)) (y-(h`div`2)) w h in
+    (surface,rect,0)
+
+loadShipAssets :: MainMonad ()
+loadShipAssets = do
+  walking <- fmap fromJust
+             $ liftIO 
+             $ loadAnimation "../../Test/animation" (2000`div`framerate)
+  let loopedWalking = fromJust $ loopFrom 0 walking
+  addAnimation "walkingLink" loopedWalking
 
 newShip :: (Float,Float) -> GameMonad Agent
-newShip initPosition = newAgent $ Ship {
-  _position = initPosition,
-  _speed = 0,
-  _angle = pi/2
-  }
+newShip initPosition = do
+  mAnimation <- getAnimation "walkingLink"
+  case mAnimation of
+    Nothing -> error $ "Cannot get animation walkingLink"
+    Just animation -> do
+      animationPoint <- startAnimation animation
+      newAgent $ Ship {
+        _shipPosition = initPosition,
+        _shipSpeed = 0,
+        _shipAngle = pi/2,
+        _shipCurrentAnimation = animationPoint
+        }
 
 maxSpeed :: Float
-maxSpeed = 3
+maxSpeed = 100
 
-fromInputs :: Ship -> GameMonad Ship
-fromInputs ship = do
-  inputs <- ask
-  let (moving, angle) =
+processInputs :: AgentMonad Ship ()
+processInputs = do
+  inputs <- query getInputs
+  let (moving, angle') =
         case (inputs^.up,inputs^.down,inputs^.left,inputs^.right) of
           (True,False,False,False) -> (True,pi/2)
           (False,True,False,False) -> (True,-pi/2)
           (False,False,True,False) -> (True,pi)
           (False,False,False,True) -> (True,0)
+          (True,False,True,False) -> (True,3*pi/4)
+          (True,False,False,True) -> (True,pi/4)
+          (False,True,True,False) -> (True,-3*pi/4)
+          (False,True,False,True) -> (True,-pi/4)
           _ -> (False, pi/2)
-  return $ ship {
-    _speed = if moving then maxSpeed else 0,
-    _angle = angle
-    }
+  agent.speed .= if moving then maxSpeed else 0
+  agent.angle .= angle'

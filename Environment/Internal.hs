@@ -1,36 +1,56 @@
-module Environment.Internal where
+module Environment.Internal 
+       (
+         HasID(..),
+         AgentClass(..),
+         AgentType(..),
+         Agent(..),
+         Environment(..),
+         agents,
+         currentId,
+         assets,
+         currentTime,
+         Inputs(..),
+         up,
+         down,
+         left,
+         right,
+         shot,
+         laser,
+         pause,
+         AssetsReader(..),
+         InputsReader(..),
+         EnvironmentState(..),
+         GameState(..),
+         inputs,
+         GameReader(..),
+         GameMonad,
+         MainState(..),
+         MainMonad,
+         AgentState(..),
+         agent,
+         AgentReader(..),
+         AgentMonad
+       ) where
 
+import Graphics.UI.SDL
 import Control.Lens
 import Control.Lens.TH
 import Control.Monad.Identity
 import Control.Monad.State
 import Control.Monad.Reader
+import Control.Monad.RWS
 import Control.Monad.State.Class
 import Control.Monad.Reader.Class
 
--- | AABB with center and half dimension
-data AABB = AABB (Float,Float) (Float,Float)
-            deriving (Eq, Ord, Show)
-
-data Quadrant = NW | NE | SW | SE
-
--- | QuadTree data structure containing AABBs
-data QuadTree a = Leaf
-                | Node AABB [a] (QuadTree a) (QuadTree a)
-                                (QuadTree a) (QuadTree a)
-                  deriving (Eq, Ord, Show)
-
-class HasAABB a where
-  getAABB :: a -> AABB
-
-instance HasAABB AABB where
-  getAABB = id
+import Assets.Internal
+import QuadTree
+import MonadTime
 
 class HasID a where
   getID :: a -> Int
 
 class (Show a, HasAABB a) => AgentClass a where
-  live :: Float -> Int -> a -> GameMonad ()
+  live :: Float -> AgentMonad a ()
   agentType :: a -> AgentType
   render :: a -> (Surface,Rect,Int)
 
@@ -54,7 +74,8 @@ instance Show Agent where
 
 data Environment = Environment {
   _agents :: QuadTree Agent,
-  _currentId :: Int
+  _currentId :: Int,
+  _currentTime :: Int
   }
 
 data Inputs = Inputs {
@@ -67,14 +88,80 @@ data Inputs = Inputs {
   _pause :: Bool
   }
 
--- | Base monad, can modify the environment
-type EnvMonadT = StateT Environment
--- | The game monad can modify the environment and read user inputs, and
--- cannot perform any IO.
-type GameMonad = ReaderT Inputs (EnvMonadT Identity)
--- | The main monad is "more privileged" and can also modify the
--- inputs from IO information.
-type MainMonad = StateT Inputs (EnvMonadT IO)
+data GameState = GameState {
+  _gameEnvironment :: Environment
+  }
+data GameReader = GameReader {
+  _gameInputs :: Inputs,
+  _gameAssets :: Assets
+  }
+type GameMonad = RWS GameReader () GameState
+data MainState = MainState {
+  _mainEnvironment :: Environment,
+  _inputs :: Inputs,
+  _assets :: Assets
+  }
+type MainMonad = StateT MainState IO
+data AgentState a = AgentState {
+  _agentEnvironment :: Environment,
+  _agent :: a
+  }
+data AgentReader = AgentReader {
+  _agentInputs :: Inputs,
+  _agentAssets :: Assets,
+  _ident :: Int
+  }
+type AgentMonad a = RWS AgentReader () (AgentState a)
 
 makeLenses ''Environment
 makeLenses ''Inputs
+makeLenses ''MainState
+makeLenses ''GameState
+makeLenses ''GameReader
+makeLenses ''AgentState
+makeLenses ''AgentReader
+
+class AssetsReader a where
+  getAssets :: Getting Assets a Assets
+
+instance AssetsReader MainState where
+  getAssets = assets
+
+instance AssetsReader GameReader where
+  getAssets = gameAssets
+
+instance AssetsReader AgentReader where
+  getAssets = agentAssets
+
+class InputsReader a where
+  getInputs :: Getting Inputs a Inputs
+
+instance InputsReader MainState where
+  getInputs = inputs
+
+instance InputsReader AgentReader where
+  getInputs = agentInputs
+
+instance InputsReader GameReader where
+  getInputs = gameInputs
+
+class EnvironmentState a where
+  environment :: Simple Lens a Environment
+
+instance EnvironmentState GameState where
+  environment = gameEnvironment
+
+instance EnvironmentState MainState where
+  environment = mainEnvironment
+
+instance EnvironmentState (AgentState a) where
+  environment = agentEnvironment
+
+instance MonadTime GameMonad where
+  getTimeMillis = use $ environment.currentTime
+
+instance MonadTime MainMonad where
+  getTimeMillis = liftIO $ fmap fromIntegral $ getTicks
+
+instance MonadTime (AgentMonad a) where
+  getTimeMillis = use $ environment.currentTime

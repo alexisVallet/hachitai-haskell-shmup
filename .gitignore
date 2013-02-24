@@ -5,3 +5,13 @@ cabal-dev
 *.chi
 *.chs.h
 .virthualenv
+/AnimatedAgent.hs~
+/Assets.hs~
+/Assets/Internal.hs~
+/Bullet.hs~
+/KinematicAgent.hs~
+/QuadTree.hs~
+/Test/ArbitraryInstances.hs~
+/Test/Collision.hs~
+/Test/Main.hs~
+/Test/QuadTree.hs~

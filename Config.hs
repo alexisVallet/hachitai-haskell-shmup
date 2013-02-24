@@ -1,6 +1,6 @@
 module Config where
 
-import Environment.Internal
+import QuadTree
 import Data.Word
 
 framerate :: Int

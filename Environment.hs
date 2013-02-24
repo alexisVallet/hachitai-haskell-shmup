@@ -1,48 +1,41 @@
 module Environment 
        (
+         module Environment.Internal,
          AABB(..),
-         move,
          HasAABB(..),
          AgentType(..),
          AgentClass(..),
-         Agent,
-         Environment,
-         GameMonad,
-         MainMonad,
-         agents,
          updateEnvironment,
-         processInputs,
-         Inputs,
-         up,
-         down,
-         left,
-         right,
-         shot,
-         laser,
-         pause,
          newAgent,
          runGame,
          runMain,
-         addAgent,
-         toList
+         addAgent
        ) where
 
 import Control.Lens
 import Control.Monad.Identity
 import Control.Monad.State
 import Control.Monad.Reader
+import Control.Monad.RWS
 import Graphics.UI.SDL.Events
 import Graphics.UI.SDL.Keysym
+import Graphics.UI.SDL.Time
+import Data.Map as Map
 
 import Config
 import Environment.Internal
-import Collision
+import Collision as Quad
+import Assets.Internal
+import MonadTime
 
 updateEnvironment :: Float -> GameMonad ()
 updateEnvironment dt = do
-  agents' <- use agents
-  forM_ (toList agents') $ \(Agent ident agent) -> do
-    live dt ident agent
+  agents' <- use $ environment.agents
+  forM_ (Quad.toList agents') $ \(Agent ident oldAgent) -> do
+    newAgent <- runAgent ident oldAgent $ do
+      live dt
+      use agent
+    environment.agents %= move ident oldAgent newAgent
 
 processInputs :: MainMonad ()
 processInputs = do
@@ -60,41 +53,67 @@ processInputs = do
 changeInput :: Keysym -> Bool -> MainMonad ()
 changeInput key value = do
   case symKey key of
-    SDLK_UP -> up .= value
-    SDLK_DOWN -> down .= value
-    SDLK_RIGHT -> right .= value
-    SDLK_LEFT -> left .= value
-    SDLK_w -> shot .= value
-    SDLK_x -> laser .= value
-    SDLK_ESCAPE -> pause .= value
+    SDLK_UP -> inputs.up .= value
+    SDLK_DOWN -> inputs.down .= value
+    SDLK_RIGHT -> inputs.right .= value
+    SDLK_LEFT -> inputs.left .= value
+    SDLK_w -> inputs.shot .= value
+    SDLK_x -> inputs.laser .= value
+    SDLK_ESCAPE -> inputs.pause .= value
     _ -> return ()
 
-uniqueID :: (Monad m) => EnvMonadT m Int
+uniqueID :: (MonadState e m, EnvironmentState e) => m Int
 uniqueID = do
-  newId <- use currentId
-  currentId += 1
+  newId <- use $ environment.currentId
+  environment.currentId += 1
   return newId
 
-newAgent :: (MonadTrans mt, Monad m, AgentClass a, Monad (mt (EnvMonadT m))) => a -> mt (EnvMonadT m) Agent
+newAgent :: (MonadState e m, EnvironmentState e, AgentClass a) => a -> m Agent
 newAgent agent = do
-  ident <- lift $ uniqueID
+  ident <- uniqueID
   return $ Agent ident agent
 
 runGame :: GameMonad a -> MainMonad a
 runGame gameAction = do
-  inputs <- get
-  environment <- lift $ get
-  let (result,environment') = 
-        runState (runReaderT gameAction inputs) environment
-  lift $ put environment'
-  return result
+  processInputs
+  inputs' <- use inputs
+  assets' <- use assets
+  time <- getTimeMillis
+  environment.currentTime .= time
+  environment' <- use environment
+  let 
+    reader = GameReader inputs' assets'
+    initGameState = GameState environment'
+    (res,gameState,()) = runRWS gameAction reader initGameState
+  environment .= gameState^.environment
+  return res
 
 runMain :: MainMonad a -> IO a
 runMain mainAction = do
-  evalStateT (evalStateT mainAction initInputs) initEnv
-  where
+  time <- getTicks
+  let
     initInputs = Inputs False False False False False False False
-    initEnv = Environment (emptyQuadTree screenAABB qTreeHeight) 0
+    initEnv = 
+      Environment 
+      (Quad.empty screenAABB qTreeHeight) 
+      0
+      (fromIntegral time)
+    initAssets = Assets Map.empty
+    initState = MainState initEnv initInputs initAssets
+  evalStateT mainAction initState
 
-addAgent :: (Monad m) => Agent -> EnvMonadT m ()
-addAgent agent = agents %= insertQTree agent
+runAgent :: (AgentClass a) => Int -> a -> AgentMonad a b -> GameMonad b
+runAgent ident agent agentAction = do
+  environment' <- use environment
+  inputs' <- query getInputs
+  assets' <- query getAssets
+  let 
+    initialState = AgentState environment' agent
+    reader = AgentReader inputs' assets' ident
+    (result,finalState,()) = runRWS agentAction reader initialState
+  environment .= finalState^.environment
+  return result
+
+addAgent :: (MonadState e m, EnvironmentState e) => Agent -> m ()
+addAgent agent = 
+  environment.agents %= Quad.insert agent

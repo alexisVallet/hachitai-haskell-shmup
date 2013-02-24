@@ -12,6 +12,3 @@ import Graphics.UI.SDL.Time
 
 class Monad m => MonadTime m where
   getTimeMillis :: m Int
-
-instance MonadIO m => MonadTime m where
-  getTimeMillis = liftIO $ fmap fromIntegral $ getTicks

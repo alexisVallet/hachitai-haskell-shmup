@@ -19,8 +19,10 @@ import Control.Monad
 import MonadTime
 
 data Animation = Animation [Surface] Int Int Int
+                 deriving (Eq, Ord, Show)
 
 data AnimationPoint = AnimationPoint [Surface] Int Int
+                      deriving (Eq, Ord, Show)
 
 -- | Loads an animation from a folder of images. The frames of the 
 -- animation will be loaded in lexical (alphabetical) order of their
@@ -30,11 +32,11 @@ loadAnimation :: FilePath -> Int -> IO (Maybe Animation)
 loadAnimation folderPath speed = do
   dirContents <- getDirectoryContents folderPath
   animation <- newIORef []
-  putStrLn $ show dirContents
-  forM_ [0..length dirContents-1] $ \i -> do
+  forM_ [0..length dirContents-2] $ \i -> do
     let fullPath = folderPath ++ "/" ++ show i ++ ".png"
     exists <- doesFileExist fullPath
-    when exists $ do    
+    when exists $ do
+      putStrLn $ "loading " ++ fullPath
       frame <- load fullPath
       modifyIORef animation (frame:)
   frames <- readIORef animation
