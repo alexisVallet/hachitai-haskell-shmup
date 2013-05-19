@@ -1,36 +1,18 @@
 module Config where
 
-import QuadTree
 import Data.Word
 
-framerate :: Int
-framerate = 60
-
-frameSeconds :: Float
-frameSeconds = 1/realToFrac framerate
-
-frameTicks :: Word32
-frameTicks = 1000`div`fromIntegral framerate
-
-screenAABB :: AABB
-screenAABB =
-  let halfSize = (240, 340) in
-  AABB halfSize halfSize
+resolution :: (Int,Int)
+resolution = (480, 640)
 
 screenWidth :: Int
-screenWidth =
-  let AABB _ (hw,_) = screenAABB in
-  2 * round hw
+screenWidth = fst resolution
 
 screenHeight :: Int
-screenHeight =
-  let AABB _ (_,hh) = screenAABB in
-  2 * round hh
+screenHeight = snd resolution
 
-screenCenter :: (Float,Float)
-screenCenter =
-  let AABB center _ = screenAABB in
-  center
+fps :: Word32
+fps = 60
 
-qTreeHeight :: Int
-qTreeHeight = 4
+frameLength :: Word32
+frameLength = 1000 `div` fps

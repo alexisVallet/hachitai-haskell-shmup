@@ -1,25 +1,42 @@
-module Assets 
-       (
-         module Assets.Internal,
-         addAnimation,
-         getAnimation
-       ) where
+module Assets where
 
-import Environment
-import Assets.Internal
+import Data.Map hiding (foldr)
+import Graphics.UI.SDL.Image
+import Control.Lens
+import Control.Monad
+
 import Animation
 
-import Data.Map as Map
-import Control.Lens
-import Control.Monad.IO.Class
-import Control.Monad.Trans
-import Control.Monad.Reader.Class
+assetsPath :: String
+assetsPath = "./assets/"
 
-addAnimation :: String -> Animation -> MainMonad ()
-addAnimation animationName animation =
-  assets.animations %= insert animationName animation
+data Assets = Assets {
+  _bulletAnimations :: Map String Animation,
+  _shipAnimations :: Map String Animation,
+  _counterAnimations :: Map String Animation,
+  _gameOverAnimations :: Map String Animation
+  } deriving (Eq, Ord, Show)
+makeLenses ''Assets
 
-getAnimation :: (MonadReader a m, AssetsReader a) => String -> m (Maybe Animation)
-getAnimation animationName = do
-  assets' <- query getAssets
-  return $ Map.lookup animationName (assets'^.animations)
+loadAssets :: IO Assets
+loadAssets = do
+  let bulletAnimationFolder = assetsPath ++ "bullet/"
+      shipAnimationFolder = assetsPath ++ "ship/"
+      counterAnimationFolder = assetsPath ++ "lifecounter/"
+      gameOverFolder = assetsPath ++ "gameover/"
+      bulletAnimationNames = [("neutral", 1), ("blue", 1)]
+      shipAnimationNames = [("neutral", 1), ("left", 1), ("right", 1)]
+      counterAnimationNames = [("neutral",1)]
+      gameOverAnimationNames = [("neutral",1)]
+  bulletAnimations <- loadAnimations bulletAnimationFolder bulletAnimationNames
+  shipAnimations <- loadAnimations shipAnimationFolder shipAnimationNames
+  counterAnimations <- loadAnimations counterAnimationFolder counterAnimationNames
+  gameOverAnimations <- loadAnimations gameOverFolder gameOverAnimationNames
+  return $ Assets bulletAnimations shipAnimations counterAnimations gameOverAnimations
+
+loadAnimations :: FilePath -> [(String,Int)] -> IO (Map String Animation)
+loadAnimations folder animationNames = do
+  animations <- forM animationNames $ \(name, size) -> do
+    animation <- loadAnimation (folder ++ name ++ "/") size
+    return (name, animation)
+  return $ foldr (\(name, animation) animMap -> insert name animation animMap) empty animations
